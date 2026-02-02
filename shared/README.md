@@ -1,0 +1,1 @@
+Jotain kyyttöni komponenttei tai jotain utils/skriptii
