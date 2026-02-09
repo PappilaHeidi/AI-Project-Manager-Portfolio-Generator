@@ -1,0 +1,47 @@
+
+services:
+  github-service:
+    build: ./services/github-service
+    ports:
+      - "8001:8000"
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+    volumes:
+      - ./database:/app/database
+    
+  analysis-service:
+    build: ./services/analysis-service
+    ports:
+      - "8002:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./database:/app/database
+    
+  documentation-service:
+    build: ./services/docs-service
+    ports:
+      - "8003:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./database:/app/database
+    
+  portfolio-service:
+    build: ./services/portfolio-service
+    ports:
+      - "8004:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    volumes:
+      - ./database:/app/database
+    
+  frontend:
+    build: ./services/streamlit
+    ports:
+      - "8501:8501"
+    depends_on:
+      - github-service
+      - analysis-service
+      - documentation-service
+      - portfolio-service
