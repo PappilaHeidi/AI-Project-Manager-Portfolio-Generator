@@ -19,10 +19,10 @@ app.add_middleware(
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GITHUB_SERVICE_URL = "http://github-service:8000"
 
-# Alustetaan Ai agentti
+# Initialize Gemini 2.5 Flash
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-2.5-flash') # Muuta tätä, mikäli haluat muuttaa mallia
+    model = genai.GenerativeModel('gemini-2.5-flash')
 else:
     model = None
 
@@ -39,9 +39,9 @@ async def root():
 
 @app.get("/analyze/commits/{owner}/{repo}")
 async def analyze_commits(owner: str, repo: str, limit: int = 30):
-    """Analysoi repositorion committeja AI:n avulla"""
+    """Analyze repository commits using AI"""
     
-    # Haetaan commitit github-serviceltä
+    # Fetch commits from github-service
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
@@ -71,11 +71,11 @@ async def analyze_commits(owner: str, repo: str, limit: int = 30):
             "commit_count": 0
         }
     
-    # Perusanalyysi ilman AI:ta
+    # Basic analysis without AI
     commit_count = len(commits)
     authors = list(set(c["author"] for c in commits))
     
-    # Lasketaan aktiivisuus
+    # Calculate activity level
     activity_level = "low"
     if commit_count > 20:
         activity_level = "high"
@@ -90,20 +90,19 @@ async def analyze_commits(owner: str, repo: str, limit: int = 30):
         "authors": authors[:5]
     }
     
-    # AI-analyysi
+    # AI analysis with Gemini 2.5 Flash
     if model:
         try:
             commit_messages = "\n".join([
                 f"- {c['message'][:100]}" for c in commits[:15]
             ])
             
-            prompt = f"""Analysoi seuraavat Git commit-viestit ja anna lyhyt yhteenveto siitä, 
-mitä projektissa on tehty viime aikoina. Vastaa suomeksi, max 3-4 virkettä.
+            prompt = f"""Analyze the following Git commit messages and provide a brief summary of what has been done in the project recently. Respond in English, max 3-4 sentences.
 
-Commitit:
+Commits:
 {commit_messages}
 
-Anna käytännönläheinen yhteenveto projektin kehityksestä."""
+Provide a practical summary of the project's development."""
 
             ai_response = model.generate_content(prompt)
             result["ai_summary"] = ai_response.text
@@ -118,17 +117,17 @@ Anna käytännönläheinen yhteenveto projektin kehityksestä."""
 
 @app.get("/analyze/project/{owner}/{repo}")
 async def analyze_project(owner: str, repo: str):
-    """Analysoi koko projektin tilan"""
+    """Analyze overall project status"""
     
     async with httpx.AsyncClient() as client:
         try:
-            # Haetaan repo info
+            # Fetch repo info
             info_response = await client.get(
                 f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/info",
                 timeout=30.0
             )
             
-            # Haetaan rakenne
+            # Fetch structure
             structure_response = await client.get(
                 f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/structure",
                 timeout=30.0
@@ -152,22 +151,22 @@ async def analyze_project(owner: str, repo: str):
         "project_health": "active" if info.get("stars", 0) > 0 else "new"
     }
     
-    # AI-analyysi projektista
+    # AI analysis of the project
     if model:
         try:
             tech_list = ", ".join(structure.get("technologies", {}).get("languages", []))
             tools_list = ", ".join(structure.get("technologies", {}).get("tools", [])[:5])
             
-            prompt = f"""Analysoi tämä ohjelmistoprojekti ja kirjoita siitä lyhyt ammattilaismainen kuvaus.
+            prompt = f"""Analyze this software project and write a brief professional description.
 
-Projekti: {info['name']}
-Kuvaus: {info.get('description', 'Ei kuvausta')}
-Pääkieli: {info.get('language', 'Unknown')}
-Teknologiat: {tech_list}
-Työkalut: {tools_list}
+Project: {info['name']}
+Description: {info.get('description', 'No description')}
+Main Language: {info.get('language', 'Unknown')}
+Technologies: {tech_list}
+Tools: {tools_list}
 
-Kirjoita 2-3 virkkeen ammattimainen kuvaus projektista suomeksi. 
-Keskity siihen mitä projekti tekee ja millä teknologioilla."""
+Write a 2-3 sentence professional description of the project in English. 
+Focus on what the project does and what technologies it uses."""
 
             ai_response = model.generate_content(prompt)
             result["ai_description"] = ai_response.text
