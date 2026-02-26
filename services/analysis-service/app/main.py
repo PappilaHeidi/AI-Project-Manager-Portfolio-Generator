@@ -5,6 +5,16 @@ import httpx
 import os
 from typing import List, Dict, Any
 from datetime import datetime
+import sys
+import json
+
+# Add shared to path
+sys.path.insert(0, '/app/shared')
+from database.db import (
+    init_database,
+    save_ai_analysis,
+    get_db_connection
+)
 
 app = FastAPI(title="Analysis Service")
 
@@ -33,13 +43,14 @@ async def root():
         "service": "analysis-service",
         "status": "running",
         "ai_model": "gemini-2.5-flash",
-        "ai_enabled": model is not None
+        "ai_enabled": model is not None,
+        "database": "enabled"
     }
 
 
 @app.get("/analyze/commits/{owner}/{repo}")
-async def analyze_commits(owner: str, repo: str, limit: int = 30):
-    """Analyze repository commits using AI"""
+async def analyze_commits(owner: str, repo: str, limit: int = 30, use_cache: bool = True):
+    """Analyze repository commits using AI and save to database"""
     
     # Fetch commits from github-service
     async with httpx.AsyncClient() as client:
@@ -58,6 +69,18 @@ async def analyze_commits(owner: str, repo: str, limit: int = 30):
             
             commits = response.json()
             
+            # Get repo_id from github-service
+            info_response = await client.get(
+                f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/info",
+                timeout=30.0
+            )
+            
+            if info_response.status_code != 200:
+                raise HTTPException(status_code=503, detail="Failed to fetch repo info")
+            
+            repo_info = info_response.json()
+            repo_id = repo_info.get('repo_id')
+            
         except httpx.RequestError as e:
             raise HTTPException(
                 status_code=503,
@@ -70,6 +93,31 @@ async def analyze_commits(owner: str, repo: str, limit: int = 30):
             "activity_level": "none",
             "commit_count": 0
         }
+    
+    # Check if we have cached analysis
+    if use_cache and repo_id:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM ai_analyses 
+            WHERE repo_id = ? AND analysis_type = 'commit_analysis'
+            ORDER BY created_at DESC LIMIT 1
+        """, (repo_id,))
+        cached_analysis = cursor.fetchone()
+        conn.close()
+        
+        if cached_analysis:
+            # Check if cache is recent (less than 1 hour old)
+            from datetime import datetime, timedelta
+            created_at = datetime.fromisoformat(cached_analysis['created_at'])
+            if datetime.now() - created_at < timedelta(hours=1):
+                return {
+                    "commit_count": len(commits),
+                    "activity_level": cached_analysis['activity_level'],
+                    "ai_summary": cached_analysis['summary'],
+                    "cached": True,
+                    "analysis_id": cached_analysis['id']
+                }
     
     # Basic analysis without AI
     commit_count = len(commits)
@@ -107,6 +155,16 @@ Provide a practical summary of the project's development."""
             ai_response = model.generate_content(prompt)
             result["ai_summary"] = ai_response.text
             
+            # Save analysis to database
+            if repo_id:
+                analysis_data = {
+                    "ai_summary": ai_response.text,
+                    "activity_level": activity_level,
+                    "technologies": {}
+                }
+                save_ai_analysis(repo_id, 'commit_analysis', analysis_data)
+                result["cached"] = False
+            
         except Exception as e:
             result["ai_summary"] = f"AI analysis failed: {str(e)}"
     else:
@@ -116,8 +174,8 @@ Provide a practical summary of the project's development."""
 
 
 @app.get("/analyze/project/{owner}/{repo}")
-async def analyze_project(owner: str, repo: str):
-    """Analyze overall project status"""
+async def analyze_project(owner: str, repo: str, use_cache: bool = True):
+    """Analyze overall project status and save to database"""
     
     async with httpx.AsyncClient() as client:
         try:
@@ -138,9 +196,37 @@ async def analyze_project(owner: str, repo: str):
             
             info = info_response.json()
             structure = structure_response.json()
+            repo_id = info.get('repo_id')
             
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Cannot connect to github-service: {str(e)}")
+    
+    # Check if we have cached analysis
+    if use_cache and repo_id:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM ai_analyses 
+            WHERE repo_id = ? AND analysis_type = 'project_analysis'
+            ORDER BY created_at DESC LIMIT 1
+        """, (repo_id,))
+        cached_analysis = cursor.fetchone()
+        conn.close()
+        
+        if cached_analysis:
+            # Check if cache is recent (less than 24 hours old)
+            from datetime import datetime, timedelta
+            created_at = datetime.fromisoformat(cached_analysis['created_at'])
+            if datetime.now() - created_at < timedelta(hours=24):
+                return {
+                    "name": info["name"],
+                    "description": info.get("description", ""),
+                    "language": info.get("language", "Unknown"),
+                    "stars": info.get("stars", 0),
+                    "ai_description": cached_analysis['summary'],
+                    "cached": True,
+                    "analysis_id": cached_analysis['id']
+                }
     
     result = {
         "name": info["name"],
@@ -171,7 +257,53 @@ Focus on what the project does and what technologies it uses."""
             ai_response = model.generate_content(prompt)
             result["ai_description"] = ai_response.text
             
+            # Save analysis to database
+            if repo_id:
+                analysis_data = {
+                    "ai_description": ai_response.text,
+                    "technologies": structure.get("technologies", {})
+                }
+                save_ai_analysis(repo_id, 'project_analysis', analysis_data)
+                result["cached"] = False
+            
         except Exception as e:
             result["ai_description"] = f"AI analysis failed: {str(e)}"
     
     return result
+
+@app.get("/analysis/{repo_id}")
+async def get_analysis_by_repo_id(repo_id: int, analysis_type: str = None):
+    """Get all analyses for a repository"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if analysis_type:
+        cursor.execute("""
+            SELECT * FROM ai_analyses 
+            WHERE repo_id = ? AND analysis_type = ?
+            ORDER BY created_at DESC
+        """, (repo_id, analysis_type))
+    else:
+        cursor.execute("""
+            SELECT * FROM ai_analyses 
+            WHERE repo_id = ?
+            ORDER BY created_at DESC
+        """, (repo_id,))
+    
+    analyses = cursor.fetchall()
+    conn.close()
+    
+    if not analyses:
+        raise HTTPException(status_code=404, detail="No analyses found")
+    
+    return [
+        {
+            "id": a['id'],
+            "analysis_type": a['analysis_type'],
+            "summary": a['summary'],
+            "activity_level": a['activity_level'],
+            "tech_stack": a['tech_stack'],
+            "created_at": a['created_at']
+        }
+        for a in analyses
+    ]
