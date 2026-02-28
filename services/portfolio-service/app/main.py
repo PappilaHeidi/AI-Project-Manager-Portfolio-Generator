@@ -4,9 +4,24 @@ from pydantic import BaseModel
 import google.generativeai as genai
 import httpx
 import os
+import sys
 from typing import List, Dict, Any
 
+# Add shared to path
+sys.path.insert(0, '/app/shared')
+from database.db import (
+    init_database,
+    save_generated_content,
+    get_db_connection
+)
+
 app = FastAPI(title="Portfolio Service")
+
+# Initialize database on startup
+@app.on_event("startup")
+async def startup_event():
+    init_database()
+    print("✅ Portfolio Service started with database support")
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,13 +56,14 @@ async def root():
     return {
         "service": "portfolio-service",
         "status": "running",
-        "ai_enabled": model is not None
+        "ai_enabled": model is not None,
+        "database": "enabled"
     }
 
 
 @app.get("/generate/project/{owner}/{repo}")
-async def generate_project_description(owner: str, repo: str):
-    """Generate professional project description for portfolio"""
+async def generate_project_description(owner: str, repo: str, use_cache: bool = True):
+    """Generate professional project description for portfolio and save to database"""
     
     async with httpx.AsyncClient() as client:
         try:
@@ -88,9 +104,44 @@ async def generate_project_description(owner: str, repo: str):
             commits = commits_response.json() if commits_response.status_code == 200 else []
             proj_analysis = project_analysis.json() if project_analysis.status_code == 200 else {}
             comm_analysis = commit_analysis.json() if commit_analysis.status_code == 200 else {}
+            repo_id = info.get('repo_id')
             
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Service connection error: {str(e)}")
+    
+    # Check if we have cached portfolio description
+    if use_cache and repo_id:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM generated_content 
+            WHERE repo_id = ? AND content_type = 'portfolio_description'
+            ORDER BY created_at DESC LIMIT 1
+        """, (repo_id,))
+        cached_content = cursor.fetchone()
+        conn.close()
+        
+        if cached_content:
+            # Check if cache is recent (less than 7 days old)
+            from datetime import datetime, timedelta
+            created_at = datetime.fromisoformat(cached_content['created_at'])
+            if datetime.now() - created_at < timedelta(days=7):
+                tech_languages = ", ".join(structure.get("technologies", {}).get("languages", []))
+                tech_tools = ", ".join(structure.get("technologies", {}).get("tools", []))
+                
+                return {
+                    "owner": owner,
+                    "repo": repo,
+                    "name": info['name'],
+                    "url": info.get('url', ''),
+                    "description": cached_content['content'],
+                    "technologies": tech_languages,
+                    "tools": tech_tools,
+                    "stars": info.get('stars', 0),
+                    "language": info.get('language', 'Unknown'),
+                    "cached": True,
+                    "content_id": cached_content['id']
+                }
     
     if model:
         try:
@@ -121,17 +172,23 @@ Do not exaggerate. Focus on concrete facts.
 Format for a portfolio page or LinkedIn profile."""
 
             ai_response = model.generate_content(prompt)
+            portfolio_description = ai_response.text
+            
+            # Save to database
+            if repo_id:
+                save_generated_content(repo_id, 'portfolio_description', portfolio_description)
             
             return {
                 "owner": owner,
                 "repo": repo,
                 "name": info['name'],
                 "url": info.get('url', ''),
-                "description": ai_response.text,
+                "description": portfolio_description,
                 "technologies": tech_languages,
                 "tools": tech_tools,
                 "stars": info.get('stars', 0),
-                "language": info.get('language', 'Unknown')
+                "language": info.get('language', 'Unknown'),
+                "cached": False
             }
             
         except Exception as e:
@@ -207,3 +264,29 @@ Write in English, be concise and professional."""
             "portfolio_intro": "AI not available",
             "project_count": len(projects)
         }
+
+
+@app.get("/portfolio/{repo_id}")
+async def get_portfolio_content(repo_id: int):
+    """Get portfolio content for a repository"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT * FROM generated_content 
+        WHERE repo_id = ? AND content_type = 'portfolio_description'
+        ORDER BY created_at DESC LIMIT 1
+    """, (repo_id,))
+    
+    content = cursor.fetchone()
+    conn.close()
+    
+    if not content:
+        raise HTTPException(status_code=404, detail="No portfolio content found")
+    
+    return {
+        "id": content['id'],
+        "repo_id": content['repo_id'],
+        "description": content['content'],
+        "created_at": content['created_at']
+    }
