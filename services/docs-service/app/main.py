@@ -34,6 +34,10 @@ async def root():
         "ai_enabled": model is not None
     }
 
+@app.get("/health")
+def health():
+    return {"status": "ok", "token": bool(GEMINI_API_KEY)}
+
 
 @app.get("/generate/readme/{owner}/{repo}")
 async def generate_readme(owner: str, repo: str):
@@ -170,3 +174,7 @@ Use Markdown formatting. Be concise. Write in English."""
             raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
     else:
         raise HTTPException(status_code=503, detail="AI not configured")
+    
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8003)

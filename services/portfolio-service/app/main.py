@@ -44,6 +44,10 @@ async def root():
         "ai_enabled": model is not None
     }
 
+@app.get("/health")
+def health():
+    return {"status": "ok", "token": bool(GEMINI_API_KEY)}
+
 
 @app.get("/generate/project/{owner}/{repo}")
 async def generate_project_description(owner: str, repo: str):
@@ -207,3 +211,7 @@ Write in English, be concise and professional."""
             "portfolio_intro": "AI not available",
             "project_count": len(projects)
         }
+    
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8004)

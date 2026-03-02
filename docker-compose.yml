@@ -18,7 +18,7 @@ services:
     volumes:
       - ./database:/app/database
     
-  documentation-service:
+  docs-service:
     build: ./services/docs-service
     ports:
       - "8003:8000"
@@ -43,5 +43,12 @@ services:
     depends_on:
       - github-service
       - analysis-service
-      - documentation-service
+      - docs-service
       - portfolio-service
+    environment:
+      - GITHUB_SERVICE_URL=http://github-service:8000
+      - ANALYSIS_SERVICE_URL=http://analysis-service:8000
+      - DOCS_SERVICE_URL=http://documentation-service:8000
+      - PORTFOLIO_SERVICE_URL=http://portfolio-service:8000
+    volumes:
+      - ./services/streamlit:/app

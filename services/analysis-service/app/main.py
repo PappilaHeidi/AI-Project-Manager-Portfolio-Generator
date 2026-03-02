@@ -36,6 +36,10 @@ async def root():
         "ai_enabled": model is not None
     }
 
+@app.get("/health")
+def health():
+    return {"status": "ok", "token": bool(GEMINI_API_KEY)}
+
 
 @app.get("/analyze/commits/{owner}/{repo}")
 async def analyze_commits(owner: str, repo: str, limit: int = 30):
@@ -175,3 +179,7 @@ Focus on what the project does and what technologies it uses."""
             result["ai_description"] = f"AI analysis failed: {str(e)}"
     
     return result
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8002)
