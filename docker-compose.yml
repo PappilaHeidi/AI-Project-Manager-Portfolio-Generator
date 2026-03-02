@@ -1,47 +1,72 @@
-
 services:
   github-service:
-    build: ./services/github-service
+    build:
+      context: .
+      dockerfile: services/github-service/Dockerfile
     ports:
       - "8001:8000"
     environment:
       - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - DATABASE_PATH=/app/database/app.db
     volumes:
       - ./database:/app/database
-    
+      - ./shared:/app/shared
+    networks:
+      - app-network
+
   analysis-service:
-    build: ./services/analysis-service
+    build:
+      context: .
+      dockerfile: services/analysis-service/Dockerfile
     ports:
       - "8002:8000"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DATABASE_PATH=/app/database/app.db
     volumes:
       - ./database:/app/database
-    
+      - ./shared:/app/shared
+    depends_on:
+      - github-service
+    networks:
+      - app-network
+
   documentation-service:
-    build: ./services/docs-service
+    build:
+      context: .
+      dockerfile: services/docs-service/Dockerfile
     ports:
       - "8003:8000"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DATABASE_PATH=/app/database/app.db
     volumes:
       - ./database:/app/database
-    
+      - ./shared:/app/shared
+    depends_on:
+      - github-service
+      - analysis-service
+    networks:
+      - app-network
+
   portfolio-service:
-    build: ./services/portfolio-service
+    build:
+      context: .
+      dockerfile: services/portfolio-service/Dockerfile
     ports:
       - "8004:8000"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DATABASE_PATH=/app/database/app.db
     volumes:
       - ./database:/app/database
-    
-  frontend:
-    build: ./services/streamlit
-    ports:
-      - "8501:8501"
+      - ./shared:/app/shared
     depends_on:
       - github-service
       - analysis-service
-      - documentation-service
-      - portfolio-service
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
