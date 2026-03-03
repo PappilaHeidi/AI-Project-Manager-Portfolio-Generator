@@ -216,6 +216,32 @@ def save_ai_analysis(repo_id: int, analysis_type: str, analysis_data: Dict[str, 
     conn.commit()
     conn.close()
 
+def save_issues(repo_id: int, issues: List[Dict[str, Any]]):
+    """Save issues to database"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    for issue in issues:
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO issues 
+                (repo_id, issue_number, title, state, created_at, updated_at, closed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                repo_id,
+                issue.get('number'),
+                issue.get('title'),
+                issue.get('state'),
+                issue.get('created_at'),
+                issue.get('updated_at'),
+                issue.get('closed_at')
+            ))
+        except sqlite3.IntegrityError:
+            continue
+    
+    conn.commit()
+    conn.close()
+
 def save_generated_content(repo_id: int, content_type: str, content: str):
     """Save generated content (README, portfolio, etc.)"""
     conn = get_db_connection()

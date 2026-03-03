@@ -220,6 +220,96 @@ async def get_commits(owner: str, repo: str, limit: int = 30, use_cache: bool = 
         return formatted_commits
 
 
+@app.get("/repos/{owner}/{repo}/issues")
+async def get_issues(owner: str, repo: str, limit: int = 20, use_cache: bool = True):
+    """Fetch repository issues and save to database"""
+    
+    # Get or create repository
+    async with httpx.AsyncClient() as client:
+        info_response = await client.get(
+            f"{GITHUB_API_URL}/repos/{owner}/{repo}",
+            headers=headers,
+            timeout=30.0
+        )
+        
+        if info_response.status_code != 200:
+            raise HTTPException(status_code=info_response.status_code, detail="Repository not found")
+        
+        info_data = info_response.json()
+        repo_data = {
+            "name": info_data["name"],
+            "description": info_data.get("description", ""),
+            "language": info_data.get("language", ""),
+            "stars": info_data["stargazers_count"],
+            "forks": info_data["forks_count"],
+            "created_at": info_data["created_at"],
+            "url": info_data["html_url"]
+        }
+        repo_id = get_or_create_repository(owner, repo, repo_data)
+    
+    # Check cache (1 hour for issues)
+    if use_cache and check_cache(repo_id, 'issues', max_age_hours=1):
+        # Return cached issues
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM issues WHERE repo_id = ? ORDER BY created_at DESC LIMIT ?",
+            (repo_id, limit)
+        )
+        cached_issues = cursor.fetchall()
+        conn.close()
+        
+        if cached_issues:
+            return [
+                {
+                    "number": issue['issue_number'],
+                    "title": issue['title'],
+                    "state": issue['state'],
+                    "created_at": issue['created_at'],
+                    "updated_at": issue['updated_at'],
+                    "url": f"https://github.com/{owner}/{repo}/issues/{issue['issue_number']}",
+                    "cached": True
+                }
+                for issue in cached_issues
+            ]
+    
+    # Fetch fresh issues from GitHub
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{GITHUB_API_URL}/repos/{owner}/{repo}/issues",
+            headers=headers,
+            params={"state": "open", "per_page": limit},
+            timeout=30.0
+        )
+        
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch issues")
+        
+        issues = response.json()
+        
+        # Filter out pull requests and format
+        formatted_issues = [
+            {
+                "number": issue["number"],
+                "title": issue["title"],
+                "state": issue["state"],
+                "created_at": issue["created_at"],
+                "updated_at": issue["updated_at"],
+                "url": issue["html_url"],
+                "labels": [l["name"] for l in issue.get("labels", [])],
+                "author": issue["user"]["login"],
+            }
+            for issue in issues
+            if "pull_request" not in issue
+        ]
+        
+        # Save to database
+        from database.db import save_issues
+        save_issues(repo_id, formatted_issues)
+        update_cache_metadata(repo_id, 'issues')
+        
+        return formatted_issues
+
 @app.get("/repos/{owner}/{repo}/structure")
 async def get_repo_structure(owner: str, repo: str):
     """Analyze repository structure and detect technologies"""
