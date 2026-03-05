@@ -4,11 +4,12 @@ AI-powered tool for automating GitHub project tracking, documentation, and portf
 
 ## Features
 
-- **GitHub Integration**: Automatically fetch repository metadata, commits, and project structure
-- **AI Analysis**: Analyze commit history and project health using AI
+- **GitHub Integration**: Automatically fetch repository metadata, commits, issues, and project structure
+- **AI Analysis**: Analyze commit history, project health, and suggest next steps using AI
 - **Documentation Generation**: Auto-generate professional README files
 - **Portfolio Generation**: Create polished project descriptions for portfolios and LinkedIn
 - **Smart Caching**: Reduce API calls with intelligent database caching
+- **Status Tracking**: Monitor analysis progress for repositories
 - **Microservices Architecture**: Scalable, modular backend design
 
 ## 🏗️ Architecture
@@ -69,7 +70,7 @@ AI-powered tool for automating GitHub project tracking, documentation, and portf
 
 #### Get Repository Info
 ```bash
-GET /repos/{owner}/{repo}/info
+GET /repos/{owner}/{repo}/info?use_cache=true
 ```
 
 Example:
@@ -91,13 +92,15 @@ Response:
 
 #### Get Commits
 ```bash
-GET /repos/{owner}/{repo}/commits?limit=30
+GET /repos/{owner}/{repo}/commits?limit=30&use_cache=true
 ```
 
-Example:
+#### Get Issues
 ```bash
-curl http://localhost:8001/repos/torvalds/linux/commits?limit=10
+GET /repos/{owner}/{repo}/issues?limit=20&use_cache=true
 ```
+
+Returns open issues for the repository.
 
 #### Get Repository Structure
 ```bash
@@ -110,6 +113,13 @@ Returns detected technologies and tools.
 ```bash
 GET /repos/id/{repo_id}
 ```
+
+#### Get Analysis Status
+```bash
+GET /status/{repo_id}
+```
+
+Returns comprehensive status including commit count, issue count, analyses, and generated content.
 
 ---
 
@@ -142,6 +152,34 @@ GET /analyze/project/{owner}/{repo}?use_cache=true
 ```
 
 Returns AI-generated project description and technology stack.
+
+#### Suggest Next Steps
+```bash
+GET /analyze/next-steps/{owner}/{repo}?use_cache=true
+```
+
+AI suggests actionable next steps to improve the project based on:
+- Code quality and testing status
+- Documentation completeness
+- CI/CD setup
+- Open issues
+- Recent development activity
+
+Example response:
+```json
+{
+  "owner": "microsoft",
+  "repo": "vscode",
+  "next_steps": "1. Enhance code review process...\n2. Improve documentation...",
+  "project_health": {
+    "has_tests": true,
+    "has_ci": true,
+    "has_docs": true,
+    "open_issues": 18
+  },
+  "cached": false
+}
+```
 
 #### Get Analysis by Repo ID
 ```bash
@@ -227,7 +265,8 @@ The application uses SQLite with the following tables:
 
 - **repositories**: GitHub repository metadata
 - **commits**: Commit history
-- **ai_analyses**: AI-generated analysis results
+- **issues**: Repository issues
+- **ai_analyses**: AI-generated analysis results (commits, projects, next steps)
 - **generated_content**: README and portfolio descriptions
 - **cache_metadata**: Caching timestamps
 

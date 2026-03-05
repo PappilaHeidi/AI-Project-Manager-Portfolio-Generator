@@ -406,3 +406,94 @@ def detect_technologies(files):
         tech["tools"].append("GitHub Actions")
     
     return tech
+
+@app.get("/status/{repo_id}")
+async def get_analysis_status(repo_id: int):
+    """Get analysis status for a repository"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Check if repo exists
+    cursor.execute("SELECT * FROM repositories WHERE id = ?", (repo_id,))
+    repo = cursor.fetchone()
+    
+    if not repo:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Repository not found")
+    
+    # Get counts
+    cursor.execute("SELECT COUNT(*) as count FROM commits WHERE repo_id = ?", (repo_id,))
+    commit_count = cursor.fetchone()['count']
+    
+    cursor.execute("SELECT COUNT(*) as count FROM issues WHERE repo_id = ?", (repo_id,))
+    issue_count = cursor.fetchone()['count']
+    
+    cursor.execute("SELECT COUNT(*) as count FROM ai_analyses WHERE repo_id = ?", (repo_id,))
+    analysis_count = cursor.fetchone()['count']
+    
+    cursor.execute("SELECT COUNT(*) as count FROM generated_content WHERE repo_id = ?", (repo_id,))
+    content_count = cursor.fetchone()['count']
+    
+    # Get latest analyses types
+    cursor.execute("""
+        SELECT DISTINCT analysis_type, created_at 
+        FROM ai_analyses 
+        WHERE repo_id = ? 
+        ORDER BY created_at DESC 
+        LIMIT 5
+    """, (repo_id,))
+    recent_analyses = cursor.fetchall()
+    
+    # Get latest content types
+    cursor.execute("""
+        SELECT DISTINCT content_type, created_at 
+        FROM generated_content 
+        WHERE repo_id = ? 
+        ORDER BY created_at DESC 
+        LIMIT 5
+    """, (repo_id,))
+    recent_content = cursor.fetchall()
+    
+    conn.close()
+    
+    # Determine overall status
+    if analysis_count == 0 and content_count == 0:
+        status = "not_started"
+    elif analysis_count > 0 and content_count > 0:
+        status = "fully_analyzed"
+    elif analysis_count > 0:
+        status = "analysis_complete"
+    else:
+        status = "partial"
+    
+    return {
+        "repo_id": repo_id,
+        "repo_name": f"{repo['owner']}/{repo['name']}",
+        "status": status,
+        "data": {
+            "commits": commit_count,
+            "issues": issue_count,
+            "analyses": analysis_count,
+            "generated_content": content_count
+        },
+        "recent_analyses": [
+            {
+                "type": a['analysis_type'],
+                "created_at": a['created_at']
+            }
+            for a in recent_analyses
+        ],
+        "recent_content": [
+            {
+                "type": c['content_type'],
+                "created_at": c['created_at']
+            }
+            for c in recent_content
+        ],
+        "repository_details": {
+            "language": repo['language'],
+            "stars": repo['stars'],
+            "created_at": repo['created_at'],
+            "updated_at": repo['updated_at']
+        }
+    }

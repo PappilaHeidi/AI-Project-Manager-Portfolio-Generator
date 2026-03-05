@@ -307,3 +307,151 @@ async def get_analysis_by_repo_id(repo_id: int, analysis_type: str = None):
         }
         for a in analyses
     ]
+
+@app.get("/analyze/next-steps/{owner}/{repo}")
+async def analyze_next_steps(owner: str, repo: str, use_cache: bool = True):
+    """AI suggests next steps for the project"""
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            # Fetch repo info
+            info_response = await client.get(
+                f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/info",
+                timeout=30.0
+            )
+            
+            # Fetch structure
+            structure_response = await client.get(
+                f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/structure",
+                timeout=30.0
+            )
+            
+            # Fetch commits
+            commits_response = await client.get(
+                f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/commits",
+                params={"limit": 30},
+                timeout=30.0
+            )
+            
+            # Fetch issues
+            issues_response = await client.get(
+                f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/issues",
+                params={"limit": 20},
+                timeout=30.0
+            )
+            
+            if info_response.status_code != 200:
+                raise HTTPException(status_code=503, detail="Failed to fetch project data")
+            
+            info = info_response.json()
+            structure = structure_response.json() if structure_response.status_code == 200 else {}
+            commits = commits_response.json() if commits_response.status_code == 200 else []
+            issues = issues_response.json() if issues_response.status_code == 200 else []
+            repo_id = info.get('repo_id')
+            
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=503, detail=f"Cannot connect to github-service: {str(e)}")
+    
+    # Check if we have cached next steps
+    if use_cache and repo_id:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM ai_analyses 
+            WHERE repo_id = ? AND analysis_type = 'next_steps'
+            ORDER BY created_at DESC LIMIT 1
+        """, (repo_id,))
+        cached_analysis = cursor.fetchone()
+        conn.close()
+        
+        if cached_analysis:
+            # Check if cache is recent (less than 24 hours old)
+            from datetime import datetime, timedelta
+            created_at = datetime.fromisoformat(cached_analysis['created_at'])
+            if datetime.now() - created_at < timedelta(hours=24):
+                return {
+                    "owner": owner,
+                    "repo": repo,
+                    "next_steps": cached_analysis['next_steps'],
+                    "cached": True,
+                    "analysis_id": cached_analysis['id']
+                }
+    
+    # Generate next steps with AI
+    if model:
+        try:
+            # Prepare context for AI
+            tech_languages = ", ".join(structure.get("technologies", {}).get("languages", []))
+            tech_tools = ", ".join(structure.get("technologies", {}).get("tools", []))
+            
+            recent_commits = "\n".join([
+                f"- {c['message'][:80]}" for c in commits[:10]
+            ])
+            
+            open_issues_count = len([i for i in issues if i.get('state') == 'open'])
+            
+            # Check for common files
+            files = structure.get("files", [])
+            has_tests = any("test" in f.lower() for f in files)
+            has_ci = ".github" in structure.get("directories", []) or any("ci" in f.lower() for f in files)
+            has_docs = "README.md" in files or "docs" in structure.get("directories", [])
+            
+            prompt = f"""Analyze this software project and suggest 3-5 actionable next steps to improve it.
+
+PROJECT INFORMATION:
+- Name: {info['name']}
+- Description: {info.get('description', 'No description')}
+- Language: {info.get('language', 'Unknown')}
+- Technologies: {tech_languages}
+- Tools: {tech_tools}
+- Stars: {info.get('stars', 0)}
+- Open Issues: {open_issues_count}
+
+RECENT ACTIVITY:
+{recent_commits}
+
+PROJECT STATUS:
+- Has Tests: {has_tests}
+- Has CI/CD: {has_ci}
+- Has Documentation: {has_docs}
+
+TASK:
+Based on this information, suggest 3-5 concrete, actionable next steps for improving this project.
+Focus on:
+1. Code quality and testing
+2. Documentation
+3. CI/CD and automation
+4. Security and dependencies
+5. Feature development based on open issues
+
+Format your response as a numbered list in English.
+Be specific and practical. Each suggestion should be something a developer can act on immediately."""
+
+            ai_response = model.generate_content(prompt)
+            next_steps = ai_response.text
+            
+            # Save to database
+            if repo_id:
+                analysis_data = {
+                    "next_steps": next_steps,
+                    "technologies": structure.get("technologies", {})
+                }
+                save_ai_analysis(repo_id, 'next_steps', analysis_data)
+            
+            return {
+                "owner": owner,
+                "repo": repo,
+                "next_steps": next_steps,
+                "project_health": {
+                    "has_tests": has_tests,
+                    "has_ci": has_ci,
+                    "has_docs": has_docs,
+                    "open_issues": open_issues_count
+                },
+                "cached": False
+            }
+            
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+    else:
+        raise HTTPException(status_code=503, detail="AI not configured")
