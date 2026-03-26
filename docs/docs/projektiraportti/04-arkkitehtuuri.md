@@ -724,16 +724,66 @@ app.add_middleware(
 ## 11. Testing Strategy
 
 ### 11.1 Test Coverage
-
-> *Not yet implemented — to be filled after tests are written and executed.*
-
+ 
+| Component | Test Type | Test File |
+|-----------|-----------|-----------|
+| Database Module | Unit | `test_db.py` |
+| GitHub Service | Integration | `test_github_service.py` |
+| Analysis Service | Integration | `test_analysis_sevice.py` |
+| Documentation Service | Integration | `test_docs_service.py` |
+| Portfolio Service | Integration | `test_portfolio_service.py` |
+ 
 ### 11.2 Testing Approach
-
-> *Not yet implemented — to be filled after tests are written and executed.*
-
+ 
+**Unit Tests (`test_db.py`):**
+- `init_database()` — all tables and indexes created correctly
+- `get_or_create_repository()` — upsert behaviour, duplicate handling
+- `save_commits()` — batch insert, duplicate ignored via `INSERT OR IGNORE`
+- `save_issues()` — insert and replace behaviour
+- `save_ai_analysis()` — correct field mapping
+- `save_generated_content()` — content stored correctly
+- `update_cache_metadata()` / `check_cache()` — TTL validation logic
+ 
+**Integration Tests (Service Tests):**
+- Endpoint responses and HTTP status codes (200, 404, 503)
+- External API calls mocked via `unittest.mock` and `httpx.AsyncClient`
+- AI model mocked via `unittest.mock.MagicMock`
+- Cache hit/miss behaviour validated
+- AI enabled/disabled scenarios tested
+ 
+**Manual End-to-End Tests:**
+- All endpoints validated with `curl` against live Docker containers
+- Test repositories: `torvalds/linux`, `facebook/react`, `microsoft/vscode`
+- Docker persistence validated (`docker-compose down && docker-compose up`)
+ 
 ### 11.3 Test Execution
-
-> *Not yet implemented — to be filled after tests are written and executed.*
+ 
+```bash 
+# Set required environment variables
+export GITHUB_TOKEN=ghp_xxx
+export GEMINI_API_KEY=xxx
+ 
+# Run database unit tests
+python test_db.py
+ 
+# Run service integration tests (external APIs mocked)
+python test_analysis_sevice.py
+python test_docs_service.py
+python test_portfolio_service.py
+ 
+# Run GitHub service test (makes real GitHub API calls)
+python test_github_service.py
+```
+ 
+**Test Results (last run):**
+ 
+| Test File | Result | Notes |
+|-----------|--------|-------|
+| `test_db.py` | All passed | Repositories: 2, Commits: 102, Analyses: 9, Content: 6 |
+| `test_github_service.py` | All passed | Real GitHub API, `torvalds/linux` |
+| `test_analysis_sevice.py` | All passed | Gemini API mocked |
+| `test_docs_service.py` | All passed | Gemini API mocked, README: 5220 chars |
+| `test_portfolio_service.py` | All passed | Gemini API mocked, portfolio: 1049 chars |
 
 ---
 

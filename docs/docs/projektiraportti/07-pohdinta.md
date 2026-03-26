@@ -752,40 +752,136 @@ volumes:
 ---
 
 #### 6.2.3 Testing Debt
-
-> *Not yet implemented — to be filled after tests are written and executed.*
-
+ 
+**Problem:**
+- Wrote code fast, tests slowly
+- Accumulated "testing debt" throughout development
+ 
+**Root Cause:**
+- Prioritized features over tests during development
+- "We'll write tests later" mentality
+ 
+**Impact:**
+- Some bugs discovered late (cache invalidation edge cases)
+- Refactoring was less confident without full test coverage
+ 
+**Mitigation:**
+- Added unit tests for all database operations (`test_db.py`)
+- Added integration tests for all four services with mocked external APIs
+- Manual end-to-end testing with `curl` against live Docker containers
+- Accepted lower automated coverage for MVP in favour of working features
+ 
+**Lesson:** Some testing debt is acceptable for MVPs, but test critical infrastructure (database, caching) early — these are the hardest bugs to find later.
+ 
 ---
-
+ 
 ## 7. What Worked Well
-
+ 
 ### 7.1 Testing Methodology
-
+ 
 #### 7.1.1 Testing Approach
-
-> *Not yet implemented — to be filled after tests are written and executed.*
-
+ 
+**Approach:** Unit tests for the database module, integration tests for all four services with mocked external APIs, and manual end-to-end validation with `curl`.
+ 
+**Rationale:**
+- MVP timeline prioritized working features over comprehensive test coverage
+- Mocking external APIs (`httpx.AsyncClient`, Gemini model) allowed service tests to run without real API keys or network access
+- Manual `curl` testing against live Docker containers validated the full pipeline end-to-end
+- Database unit tests were prioritized as the shared module is a critical dependency for all services
+ 
 #### 7.1.2 Tests Created
-
-> *Not yet implemented — to be filled after tests are written and executed.*
-
+ 
+**Unit Tests:**
+ 
+| Test File | Purpose | Status |
+|-----------|---------|--------|
+| `test_db.py` | Database CRUD, cache logic, duplicate handling | Created and passing |
+| `test_github_service.py` | GitHub service endpoints, cache behaviour | Created and passing |
+| `test_analysis_sevice.py` | Analysis endpoints, AI on/off scenarios | Created and passing |
+| `test_docs_service.py` | README and updates generation, content retrieval | Created and passing |
+| `test_portfolio_service.py` | Portfolio generation, multi-project, cache | Created and passing |
+ 
+**Manual End-to-End Tests:**
+- All 19 endpoints tested with `curl` against live Docker containers
+- Docker persistence validated (`docker-compose down && docker-compose up`)
+- Cache behaviour validated (repeated requests to same endpoint)
+- AI output quality reviewed manually for `torvalds/linux`, `facebook/react`, `microsoft/vscode`
+ 
 #### 7.1.3 Test Execution
-
-> *Not yet implemented — to be filled after tests are written and executed.*
-
+ 
+```bash
+# Set required environment variables
+export GITHUB_TOKEN=ghp_xxx
+export GEMINI_API_KEY=xxx
+ 
+# Database unit tests
+python test_db.py
+ 
+# Service integration tests (external APIs mocked)
+python test_analysis_sevice.py
+python test_docs_service.py
+python test_portfolio_service.py
+ 
+# GitHub service test (makes real GitHub API calls)
+python test_github_service.py
+```
+ 
+**Results (last run):**
+ 
+| Test File | Outcome | Key Data |
+|-----------|---------|----------|
+| `test_db.py` | All passed | Repos: 2, Commits: 102, Analyses: 9, Content: 6 |
+| `test_github_service.py` | All passed | Real API, `torvalds/linux`, 225,181 stars |
+| `test_analysis_sevice.py` | All passed | Gemini mocked, activity level detected correctly |
+| `test_docs_service.py` | All passed | README: 5,220 chars, updates: 142 chars |
+| `test_portfolio_service.py` | All passed | Portfolio description: 1,049 chars |
+ 
 #### 7.1.4 Testing Gaps
-
-> *Not yet implemented — to be filled after tests are written and executed.*
-
+ 
+**Not fully covered:**
+ 
+| Gap | Reason | Impact |
+|-----|--------|--------|
+| **Test coverage measurement** | No `pytest-cov` configured | Actual coverage % unknown |
+| **Load testing** | MVP scope, single-user target | Unknown behaviour under concurrent load |
+| **End-to-end automated tests** | Time constraint | Manual validation only |
+| **CI/CD pipeline** | Not implemented for MVP | No automated test execution on commit |
+| **Failure scenario tests** | Time constraint | Behaviour during partial API failures untested |
+ 
+**Rationale:**
+For a 2-person student team with a 4–5 week timeline, the priority was a functional, deployable product. The implemented tests cover the most critical paths (database operations, service endpoints, cache logic) and provide a solid foundation for expanding coverage in future iterations.
+ 
 ---
-
+ 
 ## 8. What Could Be Improved
-
+ 
 ### 8.1 Technical Improvements
-
+ 
 #### 8.1.1 Testing Coverage
-
-> *Not yet implemented — to be filled after tests are written and executed.*
+ 
+**Current State:** Unit and integration tests implemented for all components, coverage percentage not formally measured.
+ 
+**What Exists:**
+- Unit tests for all database operations (`test_db.py`)
+- Integration tests for all four services with mocked external APIs
+- Manual end-to-end validation across 3 test repositories
+- All 19 API endpoints manually verified
+ 
+**What's Missing:**
+ 
+| Gap | Priority | Suggested Fix |
+|-----|----------|---------------|
+| Coverage measurement | Medium | Add `pytest-cov` |
+| Automated test execution | High | Set up CI/CD with GitHub Actions |
+| End-to-end integration tests | High | Test service-to-service communication without mocks |
+| Load testing | Low | Use `locust` or `k6` to validate concurrency assumptions |
+| Failure scenario tests | Medium | Test behaviour when GitHub or Gemini API is down |
+ 
+**Priority Improvements:**
+1. **Add `pytest-cov`** — low effort, immediately shows coverage gaps
+2. **Set up CI/CD** — run tests automatically on every commit
+3. **Add integration tests** — test real service-to-service HTTP calls
+4. **Load testing** — validate the ~100 concurrent users assumption from architecture docs
 
 ---
 
