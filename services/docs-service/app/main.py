@@ -50,6 +50,10 @@ async def root():
         "database": "enabled"
     }
 
+@app.get("/health")
+def health():
+    return {"status": "ok", "token": bool(GEMINI_API_KEY)}
+
 
 @app.get("/generate/readme/{owner}/{repo}")
 async def generate_readme(owner: str, repo: str, use_cache: bool = True):

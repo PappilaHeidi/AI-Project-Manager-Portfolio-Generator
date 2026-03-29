@@ -47,6 +47,10 @@ async def root():
         "database": "enabled"
     }
 
+@app.get("/health")
+def health():
+    return {"status": "ok", "token": bool(GEMINI_API_KEY)}
+
 
 @app.get("/analyze/commits/{owner}/{repo}")
 async def analyze_commits(owner: str, repo: str, limit: int = 30, use_cache: bool = True):

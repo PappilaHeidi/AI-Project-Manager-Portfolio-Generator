@@ -60,6 +60,10 @@ async def root():
         "database": "enabled"
     }
 
+@app.get("/health")
+def health():
+    return {"status": "ok", "token": bool(GEMINI_API_KEY)}
+
 
 @app.get("/generate/project/{owner}/{repo}")
 async def generate_project_description(owner: str, repo: str, use_cache: bool = True):
@@ -290,3 +294,8 @@ async def get_portfolio_content(repo_id: int):
         "description": content['content'],
         "created_at": content['created_at']
     }
+        }
+    
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8004)

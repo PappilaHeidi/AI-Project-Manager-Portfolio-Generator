@@ -25,16 +25,9 @@ services:
       - DATABASE_PATH=/app/database/app.db
     volumes:
       - ./database:/app/database
-      - ./shared:/app/shared
-    depends_on:
-      - github-service
-    networks:
-      - app-network
-
-  documentation-service:
-    build:
-      context: .
-      dockerfile: services/docs-service/Dockerfile
+    
+  docs-service:
+    build: ./services/docs-service
     ports:
       - "8003:8000"
     environment:
@@ -70,3 +63,12 @@ services:
 networks:
   app-network:
     driver: bridge
+      - docs-service
+      - portfolio-service
+    environment:
+      - GITHUB_SERVICE_URL=http://github-service:8000
+      - ANALYSIS_SERVICE_URL=http://analysis-service:8000
+      - DOCS_SERVICE_URL=http://documentation-service:8000
+      - PORTFOLIO_SERVICE_URL=http://portfolio-service:8000
+    volumes:
+      - ./services/streamlit:/app

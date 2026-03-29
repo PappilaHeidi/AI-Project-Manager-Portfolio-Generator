@@ -47,6 +47,10 @@ headers = {
 async def root():
     return {"service": "github-service", "status": "running", "database": "enabled"}
 
+@app.get("/health")
+def health():
+    return {"status": "ok", "token": bool(GITHUB_TOKEN)}
+
 
 @app.get("/repos/{owner}/{repo}/info")
 async def get_repo_info(owner: str, repo: str, use_cache: bool = True):
@@ -126,8 +130,11 @@ async def get_repo_info(owner: str, repo: str, use_cache: bool = True):
             "language": data.get("language", ""),
             "stars": data["stargazers_count"],
             "forks": data["forks_count"],
+            "watchers": data.get("subscribers_count", data.get("watchers_count", 0)),
+            "open_issues": data.get("open_issues_count", 0),
             "created_at": data["created_at"],
             "updated_at": data["updated_at"],
+            "pushed_at": data.get("pushed_at", ""),
             "topics": data.get("topics", []),
             "url": data["html_url"],
             "cached": False,
@@ -219,6 +226,35 @@ async def get_commits(owner: str, repo: str, limit: int = 30, use_cache: bool = 
         
         return formatted_commits
 
+@app.get("/repos/{owner}/{repo}/languages")
+async def get_languages(owner: str, repo: str):
+    """
+    Hakee kielet suoraan GitHubin Languages API:sta.
+    Palauttaa {'languages': ['Python', 'JavaScript', ...], 'bytes': {'Python': 12345, ...}}
+    """
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{GITHUB_API_URL}/repos/{owner}/{repo}/languages",
+            headers=headers,
+            timeout=30.0
+        )
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch languages")
+
+        lang_bytes: Dict[str, int] = response.json()
+
+        total = sum(lang_bytes.values()) or 1
+        languages_pct = {
+            lang: round(bytes_ / total * 100, 1)
+            for lang, bytes_ in lang_bytes.items()
+        }
+
+        return {
+            "languages": list(lang_bytes.keys()),
+            "bytes": lang_bytes,
+            "percentages": languages_pct,
+        }
 
 @app.get("/repos/{owner}/{repo}/issues")
 async def get_issues(owner: str, repo: str, limit: int = 20, use_cache: bool = True):
@@ -319,12 +355,11 @@ async def get_repo_structure(owner: str, repo: str):
             headers=headers,
             timeout=30.0
         )
-        
+
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail="Failed to fetch repo structure")
-        
+
         contents = response.json()
-        
         files = [item["name"] for item in contents if item["type"] == "file"]
         directories = [item["name"] for item in contents if item["type"] == "dir"]
         
@@ -333,7 +368,10 @@ async def get_repo_structure(owner: str, repo: str):
         return {
             "files": files,
             "directories": directories,
-            "technologies": technologies
+            "technologies": {
+                "languages": [],
+                "tools": tools,
+            }
         }
 
 @app.get("/repos/id/{repo_id}")
