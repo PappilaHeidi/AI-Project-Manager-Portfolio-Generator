@@ -4,8 +4,9 @@ import google.generativeai as genai
 import httpx
 import os
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 import sys
+import base64
 import json
 
 # Add shared to path
@@ -28,6 +29,13 @@ app.add_middleware(
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GITHUB_SERVICE_URL = "http://github-service:8000"
+GITHUB_API_URL = os.getenv("GITHUB_SERVICE_URL", "http://github-service:8000")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+
+headers = {
+    "Authorization": f"Bearer {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github.v3+json"
+}
 
 # Initialize Gemini 2.5 Flash
 if GEMINI_API_KEY:
@@ -35,7 +43,6 @@ if GEMINI_API_KEY:
     model = genai.GenerativeModel('gemini-2.5-flash')
 else:
     model = None
-
 
 @app.get("/")
 async def root():
@@ -50,7 +57,6 @@ async def root():
 @app.get("/health")
 def health():
     return {"status": "ok", "token": bool(GEMINI_API_KEY)}
-
 
 @app.get("/analyze/commits/{owner}/{repo}")
 async def analyze_commits(owner: str, repo: str, limit: int = 30, use_cache: bool = True):
@@ -144,38 +150,37 @@ async def analyze_commits(owner: str, repo: str, limit: int = 30, use_cache: boo
     
     # AI analysis with Gemini 2.5 Flash
     if model:
+        # Collect messages for analysis
+        messages = [c['message'] for c in commits[:20]]
+        prompt = f"""
+        Analyze these Git commit messages:
+        {json.dumps(messages)}
+
+        Return a JSON object with:
+        1. "ai_summary": 2-3 sentence overview of development.
+        2. "commit_tips": 2-3 general tips to improve their commit style.
+        3. "commit_improvements": A list of 3 objects with:
+           "original": an actual weak message from the list
+           "improved": a better version following Conventional Commits
+           "explanation": why it's better.
+        
+        Response must be valid JSON only.
+        """
+        
         try:
-            commit_messages = "\n".join([
-                f"- {c['message'][:100]}" for c in commits[:15]
-            ])
+            response = model.generate_content(prompt)
+            # Clean the response of potential markdown code blocks
+            clean_json = response.text.replace("```json", "").replace("```", "").strip()
+            ai_data = json.loads(clean_json)
             
-            prompt = f"""Analyze the following Git commit messages and provide a brief summary of what has been done in the project recently. Respond in English, max 3-4 sentences.
-
-Commits:
-{commit_messages}
-
-Provide a practical summary of the project's development."""
-
-            ai_response = model.generate_content(prompt)
-            result["ai_summary"] = ai_response.text
-            
-            # Save analysis to database
-            if repo_id:
-                analysis_data = {
-                    "ai_summary": ai_response.text,
-                    "activity_level": activity_level,
-                    "technologies": {}
-                }
-                save_ai_analysis(repo_id, 'commit_analysis', analysis_data)
-                result["cached"] = False
-            
+            # Merge AI data with basic analysis
+            result.update(ai_data)
         except Exception as e:
-            result["ai_summary"] = f"AI analysis failed: {str(e)}"
-    else:
-        result["ai_summary"] = "AI not configured (missing GEMINI_API_KEY)"
+            result["ai_summary"] = f"AI Analysis failed: {str(e)}"
+            result["commit_tips"] = []
+            result["commit_improvements"] = []
     
     return result
-
 
 @app.get("/analyze/project/{owner}/{repo}")
 async def analyze_project(owner: str, repo: str, use_cache: bool = True):
@@ -312,51 +317,52 @@ async def get_analysis_by_repo_id(repo_id: int, analysis_type: str = None):
         for a in analyses
     ]
 
+def parse_next_steps(ai_text: str):
+    steps = []
+    lines = ai_text.strip().splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line: continue
+        
+        # Remove list markers (1., -, *) from the beginning
+        clean_line = line
+        if line[0].isdigit() and "." in line[:3]:
+            clean_line = line.split(".", 1)[1].strip()
+        elif line.startswith(("- ", "* ", "• ")):
+            clean_line = line[2:].strip()
+            
+        if clean_line:
+            steps.append({
+                "title": clean_line,
+                "description": "",
+                "priority": "medium"
+            })
+    return steps
+
 @app.get("/analyze/next-steps/{owner}/{repo}")
 async def analyze_next_steps(owner: str, repo: str, use_cache: bool = True):
     """AI suggests next steps for the project"""
     
     async with httpx.AsyncClient() as client:
         try:
-            # Fetch repo info
-            info_response = await client.get(
-                f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/info",
-                timeout=30.0
-            )
-            
-            # Fetch structure
-            structure_response = await client.get(
-                f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/structure",
-                timeout=30.0
-            )
-            
-            # Fetch commits
-            commits_response = await client.get(
-                f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/commits",
-                params={"limit": 30},
-                timeout=30.0
-            )
-            
-            # Fetch issues
-            issues_response = await client.get(
-                f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/issues",
-                params={"limit": 20},
-                timeout=30.0
-            )
-            
+            info_response = await client.get(f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/info", timeout=30.0)
+            structure_response = await client.get(f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/structure", timeout=30.0)
+            commits_response = await client.get(f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/commits", params={"limit":30}, timeout=30.0)
+            issues_response = await client.get(f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/issues", params={"limit":20}, timeout=30.0)
+
             if info_response.status_code != 200:
                 raise HTTPException(status_code=503, detail="Failed to fetch project data")
-            
+
             info = info_response.json()
             structure = structure_response.json() if structure_response.status_code == 200 else {}
             commits = commits_response.json() if commits_response.status_code == 200 else []
             issues = issues_response.json() if issues_response.status_code == 200 else []
             repo_id = info.get('repo_id')
-            
+
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Cannot connect to github-service: {str(e)}")
-    
-    # Check if we have cached next steps
+
+    # Check cache
     if use_cache and repo_id:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -367,39 +373,32 @@ async def analyze_next_steps(owner: str, repo: str, use_cache: bool = True):
         """, (repo_id,))
         cached_analysis = cursor.fetchone()
         conn.close()
-        
         if cached_analysis:
-            # Check if cache is recent (less than 24 hours old)
-            from datetime import datetime, timedelta
-            created_at = datetime.fromisoformat(cached_analysis['created_at'])
-            if datetime.now() - created_at < timedelta(hours=24):
-                return {
-                    "owner": owner,
-                    "repo": repo,
-                    "next_steps": cached_analysis['next_steps'],
-                    "cached": True,
-                    "analysis_id": cached_analysis['id']
-                }
-    
-    # Generate next steps with AI
+            raw_steps = cached_analysis['next_steps']
+            try:
+                # Try to load as JSON if it is a string
+                next_steps_list = json.loads(raw_steps) if isinstance(raw_steps, str) else raw_steps
+            except:
+                next_steps_list = []
+
+            return {
+                "owner": owner,
+                "repo": repo,
+                "next_steps": next_steps_list, # Now this is definitely a list
+                "cached": True
+            }
+    # AI Generation
     if model:
         try:
-            # Prepare context for AI
             tech_languages = ", ".join(structure.get("technologies", {}).get("languages", []))
             tech_tools = ", ".join(structure.get("technologies", {}).get("tools", []))
-            
-            recent_commits = "\n".join([
-                f"- {c['message'][:80]}" for c in commits[:10]
-            ])
-            
+            recent_commits = "\n".join([f"- {c['message'][:80]}" for c in commits[:10]])
             open_issues_count = len([i for i in issues if i.get('state') == 'open'])
-            
-            # Check for common files
             files = structure.get("files", [])
             has_tests = any("test" in f.lower() for f in files)
             has_ci = ".github" in structure.get("directories", []) or any("ci" in f.lower() for f in files)
             has_docs = "README.md" in files or "docs" in structure.get("directories", [])
-            
+
             prompt = f"""Analyze this software project and suggest 3-5 actionable next steps to improve it.
 
 PROJECT INFORMATION:
@@ -420,42 +419,166 @@ PROJECT STATUS:
 - Has Documentation: {has_docs}
 
 TASK:
-Based on this information, suggest 3-5 concrete, actionable next steps for improving this project.
-Focus on:
-1. Code quality and testing
-2. Documentation
-3. CI/CD and automation
-4. Security and dependencies
-5. Feature development based on open issues
-
-Format your response as a numbered list in English.
-Be specific and practical. Each suggestion should be something a developer can act on immediately."""
+Suggest 3-5 concrete, actionable next steps. Return plain numbered list in English."""
 
             ai_response = model.generate_content(prompt)
-            next_steps = ai_response.text
-            
-            # Save to database
+            next_steps = parse_next_steps(ai_response.text)
+
             if repo_id:
                 analysis_data = {
-                    "next_steps": next_steps,
-                    "technologies": structure.get("technologies", {})
-                }
+                "next_steps": json.dumps(next_steps), # THIS IS A FIX
+                "technologies": json.dumps(structure.get("technologies", {})) # Also this just in case
+            }
                 save_ai_analysis(repo_id, 'next_steps', analysis_data)
-            
+
             return {
                 "owner": owner,
                 "repo": repo,
                 "next_steps": next_steps,
-                "project_health": {
-                    "has_tests": has_tests,
-                    "has_ci": has_ci,
-                    "has_docs": has_docs,
-                    "open_issues": open_issues_count
-                },
+                "project_health": {"has_tests": has_tests, "has_ci": has_ci, "has_docs": has_docs, "open_issues": open_issues_count},
                 "cached": False
             }
-            
+
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
     else:
         raise HTTPException(status_code=503, detail="AI not configured")
+    
+ALLOWED_EXTENSIONS = (".py", ".js", ".ts", ".java", ".cpp", ".c", ".go", ".rs", ".php", ".ipynb", ".html", ".css")
+
+async def fetch_files_recursive(client, url: str, ALLOWED_EXTENSIONS: tuple) -> list:
+    files = []
+    resp = await client.get(url, headers=headers, timeout=20.0)
+    
+    if resp.status_code != 200:
+        print(f"DEBUG: API Error: {resp.status_code}")
+        return files
+
+    items = resp.json()
+    for item in items:
+        name = item.get("name", "")
+        # THIS PRINT TELLS WHAT WAS FOUND:
+        print(f"DEBUG: Checking item: {name} (Type: {item['type']})")
+
+        if item["type"] == "file":
+            if name.lower().endswith(ALLOWED_EXTENSIONS):
+                files.append(item["path"])
+        elif item["type"] == "dir":
+            # Ensure hidden folders are skipped
+            if name.startswith('.'): continue 
+            files += await fetch_files_recursive(client, item["url"], ALLOWED_EXTENSIONS)
+    return files
+
+async def analyze_with_gemini(filename: str, content: str) -> str:
+    if not model:
+        return "AI not configured"
+    
+    snippet = content[:8000]  # Limit long code
+    prompt = f"""
+You are a senior software engineer.
+
+Analyze the following code file:
+
+File: {filename}
+
+Code:
+{snippet}
+
+Provide a brief analysis including:
+- Summary of what the code does
+- Potential bugs or errors
+- Code quality issues
+- Suggestions for improvement
+
+Respond in English, concise and practical.
+"""
+    try:
+        ai_response = model.generate_content(prompt)
+        return ai_response.text
+    except Exception as e:
+        return f"AI analysis failed: {str(e)}"
+
+@app.get("/analyze/code/{owner}/{repo}")
+async def analyze_code(owner: str, repo: str, use_cache: bool = True):
+    print(f"DEBUG: Starting analysis for {owner}/{repo}")
+    
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        # ... (repo_id fetch) ...
+
+        # 3. Fetch files
+        content_url = f"https://api.github.com/repos/{owner}/{repo}/contents"
+        print(f"DEBUG: Fetching file list from: {content_url}")
+        
+        code_files = await fetch_files_recursive(client, content_url, ALLOWED_EXTENSIONS)
+        print(f"DEBUG: Found raw files: {len(code_files)}")
+        print(f"DEBUG: File paths found: {code_files}")
+        
+        # 1. Fetch repo_id
+        info_resp = await client.get(f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/info")
+        if info_resp.status_code != 200:
+            raise HTTPException(status_code=503, detail="Repo info not found")
+        
+        repo_data = info_resp.json()
+        repo_id = repo_data.get("repo_id")
+
+        # 2. CACHE: Fetch from 'summary' column
+        if use_cache and repo_id:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT summary FROM ai_analyses 
+                WHERE repo_id = ? AND analysis_type = 'code_analysis'
+                ORDER BY created_at DESC LIMIT 1
+            """, (repo_id,))
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row and row['summary']:
+                try:
+                    return {
+                        "owner": owner, "repo": repo, "cached": True,
+                        "analyses": json.loads(row['summary'])
+                    }
+                except: pass
+
+        # 3. FILE SEARCH (GitHub API directly or proxy)
+        content_url = f"https://api.github.com/repos/{owner}/{repo}/contents"
+        code_files = await fetch_files_recursive(client, content_url, ALLOWED_EXTENSIONS)
+        code_files = code_files[:5] # Limit for performance
+
+        if not code_files:
+            return {"file_count": 0, "analyses": [], "message": "No files found"}
+
+        # 4. ANALYSIS
+        analyses_results = []
+        for file_path in code_files:
+            # Fetch file content via github-service (which decodes base64)
+            f_resp = await client.get(
+                f"{GITHUB_SERVICE_URL}/repos/{owner}/{repo}/file",
+                params={"path": file_path}
+            )
+            if f_resp.status_code == 200:
+                code_content = f_resp.json().get("content", "")
+                analysis_text = await analyze_with_gemini(file_path, code_content)
+                analyses_results.append({"file": file_path, "analysis": analysis_text})
+
+        # 5. STORAGE: Match keys to SQL columns (summary, tech_stack, etc.)
+        if repo_id and analyses_results:
+            # Convert list to JSON string for the summary column
+            payload = {
+                "summary": json.dumps(analyses_results), 
+                "tech_stack": repo_data.get("language", "Unknown"),
+                "activity_level": "N/A"
+            }
+            save_ai_analysis(repo_id, 'code_analysis', payload)
+
+        return {
+            "owner": owner, "repo": repo,
+            "file_count": len(analyses_results),
+            "analyses": analyses_results,
+            "cached": False
+        }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

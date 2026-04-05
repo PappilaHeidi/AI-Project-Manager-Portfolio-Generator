@@ -2,7 +2,7 @@ services:
   github-service:
     build:
       context: .
-      dockerfile: services/github-service/Dockerfile
+      dockerfile: ./services/github-service/Dockerfile
     ports:
       - "8001:8000"
     environment:
@@ -17,17 +17,25 @@ services:
   analysis-service:
     build:
       context: .
-      dockerfile: services/analysis-service/Dockerfile
+      dockerfile: ./services/analysis-service/Dockerfile
     ports:
       - "8002:8000"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
       - DATABASE_PATH=/app/database/app.db
     volumes:
       - ./database:/app/database
-    
-  docs-service:
-    build: ./services/docs-service
+      - ./shared:/app/shared
+    depends_on:
+      - github-service
+    networks:
+      - app-network
+
+  documentation-service:
+    build:
+      context: .
+      dockerfile: ./services/docs-service/Dockerfile
     ports:
       - "8003:8000"
     environment:
@@ -45,7 +53,7 @@ services:
   portfolio-service:
     build:
       context: .
-      dockerfile: services/portfolio-service/Dockerfile
+      dockerfile: ./services/portfolio-service/Dockerfile
     ports:
       - "8004:8000"
     environment:
@@ -59,11 +67,17 @@ services:
       - analysis-service
     networks:
       - app-network
-
-networks:
-  app-network:
-    driver: bridge
-      - docs-service
+    
+  streamlit-service:
+    build:
+      context: ./services/streamlit
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    depends_on:
+      - github-service
+      - analysis-service
+      - documentation-service
       - portfolio-service
     environment:
       - GITHUB_SERVICE_URL=http://github-service:8000
@@ -72,3 +86,9 @@ networks:
       - PORTFOLIO_SERVICE_URL=http://portfolio-service:8000
     volumes:
       - ./services/streamlit:/app
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

@@ -33,7 +33,7 @@ The objective is to develop an AI-assisted application that automates the tracki
 | Week | Tasks                                                            |
 | ------ | ------------------------------------------------------------------- |
 | W1-2: Base & Data     | FastAPI/Docker, GitHub API, Commits/issues to SQLite                                              |
-| W3-4: AI Logic     | Gemini/Llama prompts, Repo analysis and "next steps" logic                                   |
+| W3-4: AI Logic     | Gemini prompts, Repo analysis and "next steps" logic                                   |
 | W5-6: UI-Portfolio     | Streamlit frontend, Auto-generated READMEs and LinkedIn descriptions                            |
 | W7-8: Polish      | Bug fixes and UI cleanup, Final documentation and submission                                     |
 
@@ -48,7 +48,7 @@ The objective is to develop an AI-assisted application that automates the tracki
 
 #### Phase 2: AI Logic & Analysis
 
- * AI Integration: Implementing Gemini Flash or Llama.
+ * AI Integration: Implementing Gemini Flash.
 
  * Functionality: Designing prompts that analyze the development history to identify project milestones, potential bottlenecks, and suggest actionable "next steps."
 
@@ -113,7 +113,7 @@ Interfaces define how system components communicate.
 3. External APIs
 
  * GitHub: commits, issues, metadata
- * AI Models (Gemini / Llama): analysis, tech detection, summaries
+ * AI Models (Gemini): analysis, tech detection, summaries
 
 4. Internal Modules
 
@@ -131,7 +131,7 @@ Design Goals: clear separation, scalable, testable, AI-provider replaceable.
 | Phase               | Tool / Technology                   |
 | ------------------- | --------------------------------------- |
 | Frontend | Streamlit                               |
-| AI Engine     | Gemini Flash / Llama                           |
+| AI Engine     | Gemini Flash                          |
 | Backend             | FastAPI                             |
 | Database  | SQLite            |
 | Integrations  | GitHub API           |
