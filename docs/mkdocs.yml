@@ -31,5 +31,7 @@ plugins:
   - awesome-nav
   - search
 
+docs_dir: docs
+
 copyright: |
   Heidi Pappila, Joni Kauppinen in 2026.
