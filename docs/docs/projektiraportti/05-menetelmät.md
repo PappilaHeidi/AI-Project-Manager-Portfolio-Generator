@@ -497,6 +497,83 @@ async def get_repo_info(owner: str, repo: str):
         raise HTTPException(status_code=500, detail="Internal server error")
 ```
 
+### 4.5 Frontend Development Method
+
+**Approach:** Python-based reactive UI with Streamlit, containerized
+as a first-class microservice
+
+#### 4.5.1 Technology Selection
+
+| Factor             | Score (1-5) | Justification                                       |
+|--------------------|-------------|-----------------------------------------------------|
+| Development Speed  | 5           | UI built in pure Python, no JavaScript required     |
+| Team Familiarity   | 5           | No React or frontend framework knowledge needed     |
+| Interactivity      | 3           | Sufficient for MVP; limited fine-grained control    |
+| Performance        | 3           | Full script re-runs on each interaction             |
+| Deployment         | 5           | Runs as a standard Docker container in app-network  |
+
+**Rejected alternative:** React + separate API gateway
+- Reason: Would require a dedicated frontend developer and
+  significantly longer development time for MVP scope.
+
+#### 4.5.2 Service Communication
+
+Because streamlit-service runs inside the same Docker bridge network
+as the backend services, all HTTP calls use internal Docker DNS names:
+
+  GITHUB_SVC    = http://github-service:8000
+  ANALYSIS_SVC  = http://analysis-service:8000
+  DOCS_SVC      = http://documentation-service:8000
+  PORTFOLIO_SVC = http://portfolio-service:8000
+
+All service calls are routed through three helper functions that
+provide consistent error classification (FR8):
+
+```
+  svc_get()    — HTTP GET with typed ServiceError on failure
+  svc_post()   — HTTP POST with 60s default timeout for AI endpoints
+  svc_delete() — HTTP DELETE for database cleanup operations
+```
+
+#### 4.5.3 State and Pagination Management
+
+Streamlit's reactive model re-executes the full script on every user
+interaction. This is managed through two mechanisms:
+
+**Session State Cache:**
+API results are stored in st.session_state to avoid redundant service
+calls on page re-renders:
+
+```
+  st.session_state.data        # Raw repository data
+  st.session_state.analysis    # AI analysis results
+  st.session_state.portfolio   # Portfolio generation results
+  st.session_state.docs        # Generated documents (README, plan)
+```
+
+**Pagination (NFR6):**
+Commits and issues are paginated for memory efficiency and readability:
+
+  COMMITS_PER_PAGE = 20  (commit list on Dashboard)
+  Issues per page  = 5   (issue list on Dashboard)
+
+Page state is persisted in session state (commit_page, issue_page)
+and reset to 0 whenever a new repository is fetched.
+
+#### 4.5.4 Error Handling (FR8)
+
+All service errors are routed through the centralized
+show_service_error() function, which classifies errors by type and
+renders an appropriate banner in the UI:
+
+| Error Type | Detection            | User Message                              |
+|------------|----------------------|-------------------------------------------|
+| rate_limit | HTTP 403/429         | GitHub API rate limit reached          |
+| ai         | 5xx on AI services   | AI service error, try regenerating     |
+| network    | ConnectError/Timeout | Cannot connect to service              |
+| not_found  | HTTP 404             | Resource not found                     |
+| unknown    | All other errors     | Unexpected error                        |
+
 ---
 
 ## 5. Data Processing Methods

@@ -86,6 +86,7 @@ graph TB
 | Analysis Service | Microservice | AI-powered analysis | FastAPI, Gemini API |
 | Docs Service | Microservice | Documentation generation | FastAPI, Gemini API |
 | Portfolio Service | Microservice | Portfolio descriptions | FastAPI, Gemini API |
+| Streamlit Frontend | Web Application | User interface, state management, service orchestration | Streamlit, Python |
 | Shared Database | Module | Centralized data access | SQLite, Python |
 | SQLite Database | Data Store | Persistent storage | SQLite 3 |
 | Docker Network | Infrastructure | Service communication | Docker Bridge |
@@ -488,13 +489,34 @@ Is use_cache=true?
 
 **Network Topology:**
 ```mermaid
-graph LR
-    subgraph app-network["Docker Bridge Network (app-network)"]
-        GH["github-service"]
-        AN["analysis-service"]
-        DO["docs-service"]
-        PO["portfolio-service"]
+graph TD
+    User[User Browser] --- L[localhost:8501]
+    
+    subgraph DockerBridge [Docker Bridge]
+        S[streamlit-service<br/>Port 8501]
+        
+        G_URL[http://github-service:8000]
+        A_URL[http://analysis-service:8000]
+        D_URL[http://documentation-service:8000]
+        P_URL[http://portfolio-service:8000]
+        
+        G_S[github-service<br/>Port 8001]
+        A_S[analysis-service<br/>Port 8002]
+        D_S[documentation-service<br/>Port 8003]
+        P_S[portfolio-service<br/>Port 8004]
     end
+
+    L --- S
+    
+    S --- G_URL
+    S --- A_URL
+    S --- D_URL
+    S --- P_URL
+    
+    G_URL --> G_S
+    A_URL --> A_S
+    D_URL --> D_S
+    P_URL --> P_S
 ```
 
 **Service Configuration:**
@@ -505,6 +527,7 @@ graph LR
 | analysis-service | `.` | `services/analysis-service/Dockerfile` | 8002:8000 | ./database, ./shared |
 | docs-service | `.` | `services/docs-service/Dockerfile` | 8003:8000 | ./database, ./shared |
 | portfolio-service | `.` | `services/portfolio-service/Dockerfile` | 8004:8000 | ./database, ./shared |
+| streamlit | `./services/streamlit` | `Dockerfile` | 8501:8501 | all four services |
 
 **Environment Variables:**
 
@@ -540,6 +563,31 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 - Context is project root (`.`) to access `shared/` directory
 - Each service copies only its own code
 - Shared module is available to all services via `/app/shared`
+
+### 7.3 Streamlit Frontend Service
+
+The Streamlit frontend runs as a fifth containerized service within the
+same Docker bridge network, meaning all inter-service communication
+uses internal Docker DNS names rather than localhost.
+
+**Environment Variables:**
+
+| Variable              | Value                              |
+|-----------------------|------------------------------------|
+| GITHUB_SERVICE_URL    | http://github-service:8000         |
+| ANALYSIS_SERVICE_URL  | http://analysis-service:8000       |
+| DOCS_SERVICE_URL      | http://documentation-service:8000  |
+| PORTFOLIO_SERVICE_URL | http://portfolio-service:8000      |
+
+**Key characteristics:**
+- Depends on all four backend services (Docker ensures startup order)
+- Uses internal hostnames — no external port exposure needed for
+  inter-service calls
+- Exposed to the user browser via port 8501 only
+- Mounts ./services/streamlit as a volume for live code reloading
+  during development
+- Does not mount the shared database volume — all data access goes
+  through the backend APIs
 
 ---
 

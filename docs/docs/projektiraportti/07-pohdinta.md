@@ -62,6 +62,7 @@ The project was developed by a 2-person student team over approximately xx weeks
 - **Network Latency**: HTTP calls between services added 10-50ms overhead per request
 - **Docker Configuration**: Managing 4 services in docker-compose required more setup
 - **Code Duplication**: Some logic (e.g., fetching repo info) was duplicated across services
+- **Five-Service Overhead:** Streamlit runs as a fifth containerized service, meaning even a simple UI change requires rebuilding and restarting a Docker container during development.
 
 #### 2.1.3 Retrospective Assessment
 
@@ -256,6 +257,53 @@ The project was developed by a 2-person student team over approximately xx weeks
 - For beginners → Flask has gentler learning curve
 
 **Key Learning:** *FastAPI's learning curve pays off quickly. The auto-documentation and type safety are game-changers for API development.*
+
+### 2.5 Frontend Framework: Streamlit
+
+#### 2.5.1 Decision Rationale
+
+| Factor            | Consideration                              | Decision Impact                              |
+|-------------------|--------------------------------------------|----------------------------------------------|
+| Python-native     | Primary language across the whole stack    | Consistent tooling, no context switching     |
+| Docker-compatible | Needed to run as a container               | Standard Python service, no special setup    |
+| State Management  | Multi-page app with API data               | st.session_state handled caching between renders |
+
+**Alternatives Considered:**
+
+| Framework      | Pros                               | Cons                                    | Decision                         |
+|----------------|------------------------------------|-----------------------------------------|----------------------------------|
+| Flask + Jinja2 | Python-based, familiar             | Manual HTML/CSS, no reactive state      | Rejected — slower to build       |
+| React       | Rich UI, industry standard    | Requires JavaScript, separate build step | Rejected — slower to build  |
+
+#### 2.5.2 In-Practice Experience
+
+**What Worked:**
+- **Development Speed**: Dashboard, charts, and pagination built with minimal code
+- **Docker Integration**: Ran as a standard Python container with no special configuration
+- **Session State**: st.session_state effectively prevented redundant API calls across page interactions
+- **Service Health Display**: Sidebar health checks (🟢/🔴) added in minutes
+
+**Limitations Encountered:**
+- **Full Re-render**: Every button click re-runs the entire script, causing occasional flicker
+- **Limited Layout Control**: Achieving precise UI layouts required workarounds with markdown and raw HTML
+- **No Persistent Client State**: Session state is lost on browser refresh
+
+#### 2.5.3 Retrospective Assessment
+
+**Would we choose Streamlit again?**
+
+**For this MVP: Yes** — the speed advantage was decisive. The entire
+five-page dashboard was built by one developer without writing a
+single line of JavaScript.
+
+**For production: Depends** — if the UI needs fine-grained
+interactivity or mobile responsiveness, React would be the natural
+migration. Streamlit remains a good fit for internal tooling and
+data-heavy dashboards.
+
+**Key Learning:** Streamlit removes the frontend skill barrier
+entirely for Python developers. For data-driven dashboards with a
+small team, it is hard to beat.
 
 ---
 
@@ -552,11 +600,11 @@ Layer 4: External APIs → httpx errors, timeouts
 
 | Week | Focus | Deliverables |
 |------|-------|--------------|
-| **Week 1** | Planning & Setup | Requirements spec, Docker setup, GitHub API test |
-| **Week 2** | Core Backend | github-service, analysis-service, database schema |
-| **Week 3** | AI Integration | Gemini API, prompt engineering, README/portfolio generation |
-| **Week 4** | Features & Polish | Issues support, next steps, status endpoint |
-| **Week 5** | Testing & Docs | Integration tests, documentation, deployment validation |
+| **Week 1-2** | Planning & Setup | Requirements spec, Docker setup, GitHub API test, Streamlit |
+| **Week 3-4** | Core Backend | github-service, analysis-service, database schema |
+| **Week 5-6** | AI Integration | Gemini API, prompt engineering, README/portfolio generation |
+| **Week 7-8** | Features & Polish | Issues support, next steps, status endpoint |
+| **Week 9-10** | Testing & Docs | Integration tests, documentation, deployment validation |
 
 **Time Allocation:**
 
@@ -702,6 +750,27 @@ volumes:
 **Time Lost:** ~8 hours (prompt iteration)
 
 **Lesson:** Accept AI non-determinism. Focus on prompt clarity and caching rather than perfect reproducibility.
+
+#### 6.1.5 Streamlit Session State Reset on Refresh
+
+**Problem:**
+- Browser refresh wiped all session state (fetched repo data,
+  AI analysis results, pagination position)
+- Users lost context after accidental refresh
+
+**Root Cause:**
+- st.session_state is server-side per-session memory, not
+  persisted to browser storage
+
+**Solution:**
+- Accepted as a known Streamlit limitation for MVP
+- Re-fetching is fast enough (<2s for cached data) to be tolerable
+
+**Future Fix:**
+- Store last searched repository in a URL query parameter
+  (st.query_params) so the page can auto-restore on refresh
+
+**Time Lost:** ~1 hour investigating, accepted as known limitation
 
 ---
 
