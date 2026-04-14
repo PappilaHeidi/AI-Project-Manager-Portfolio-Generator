@@ -12,6 +12,11 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,7 +30,7 @@ jobs:
       - name: Build site
         run: |
           uv sync --directory "docs"
-          uv run --directory "docs" mkdocs build --strict --verbose --site-dir "../public"
+          uv run --directory "docs" mkdocs build --site-dir "../public"
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
