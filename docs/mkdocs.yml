@@ -1,5 +1,7 @@
 site_name: 'AI Project Manager & Portfolio Generator'
 
+docs_dir: docs
+
 theme:
   name: 'material'
 
@@ -30,8 +32,6 @@ plugins:
   # Navigation page ordering
   - awesome-nav
   - search
-
-docs_dir: docs
 
 copyright: |
   Heidi Pappila, Joni Kauppinen in 2026.

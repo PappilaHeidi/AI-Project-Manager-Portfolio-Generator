@@ -7,6 +7,6 @@ nav:
   # Example: a need special character ('ö' or whitespace)
   - index.md
   - projektiraportti/
-  - Heidi's_diary.md
-  - Joni's_diary.md
+  - Heidis_diary.md
+  - Jonis_diary.md
   - yhteenveto.md
