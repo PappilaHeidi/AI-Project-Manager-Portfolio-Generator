@@ -15,12 +15,12 @@
 10. [Appendices](#appendices)
 
 ---
-## 1.Project Objective
+## Project Objective
 
 The objective is to develop an AI-assisted application that automates the tracking, documentation, and portfolio generation of software projects based on GitHub data. The tool is specifically aimed at students and small development teams for whom manual documentation and maintaining a project overview are time-consuming tasks.
 
 ---
-## 2. Roles
+## Roles
 
 | Role / Responsibility      | Member    | Task / Title                  |
 | ------------------------ | -------- | -------------------------------- |
@@ -28,7 +28,7 @@ The objective is to develop an AI-assisted application that automates the tracki
 | Frontend Developer & UI/UX      | **Heidi**   | Frontend Developer / UI & Streamlit / Data Visualization   |
 
 ---
-## 3. Schedule
+## Schedule
 
 | Week | Tasks                                                            |
 | ------ | ------------------------------------------------------------------- |
@@ -38,7 +38,7 @@ The objective is to develop an AI-assisted application that automates the tracki
 | W7-8: Polish      | Bug fixes and UI cleanup, Final documentation and submission                                     |
 
 ---
-## 4. Project Phases
+## Project Phases
 
 #### Phase 1: Base & Data Infrastructure
 
@@ -65,7 +65,7 @@ The objective is to develop an AI-assisted application that automates the tracki
  * Handover: Finalizing documentation and preparing the project for submission.
 
 ---
-## 5. Database Model
+## Database Model
 
 Lightweight SQLite database to store GitHub data, AI analyses, and generated portfolio content.
 
@@ -90,7 +90,7 @@ Lightweight SQLite database to store GitHub data, AI analyses, and generated por
 Principles: normalized, cache-friendly, flexible for future AI outputs.
 
 ---
-## 6. Interfaces
+## Interfaces
 
 Interfaces define how system components communicate.
 
@@ -126,7 +126,7 @@ Interfaces define how system components communicate.
 Design Goals: clear separation, scalable, testable, AI-provider replaceable.
 
 ---
-## 7. Technologies and Tools
+## Technologies and Tools
 
 | Phase               | Tool / Technology                   |
 | ------------------- | --------------------------------------- |
@@ -138,7 +138,7 @@ Design Goals: clear separation, scalable, testable, AI-provider replaceable.
 | Containerization  | Docker          |
 
 ---
-## 8. Microservice Architecture and Process Flow
+## Microservice Architecture and Process Flow
 
 1. Input: 
     * User provides a GitHub URL via the Streamlit UI.
@@ -156,7 +156,7 @@ Design Goals: clear separation, scalable, testable, AI-provider replaceable.
     * The user views the project snapshot and copies generated portfolio content.
 
 ---
-## 9. Potential Challenges
+## Potential Challenges
 
 1. GitHub API: 
     * Rate limiting when fetching data from high-activity repositories.
@@ -168,6 +168,6 @@ Design Goals: clear separation, scalable, testable, AI-provider replaceable.
     * Unexpected technical problems may delay the project beyond the 8-week schedule.
 
 ---
-## 10. Appendices
+## Appendices
 
 ---

@@ -2,7 +2,7 @@
 
 Heidi’s Diary
 
-Clockify: https://app.clockify.me/shared/69dca0027c7d08e9ae36fa42
+Clockify: [Link to Clockify](https://app.clockify.me/shared/69dca0027c7d08e9ae36fa42)
 
 ---
 
